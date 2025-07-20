@@ -111,8 +111,8 @@
 
     <div id="auth-container" class="hidden">
         <div id="auth-card">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">Admin Login Required</h2>
-            <p class="text-gray-600 mb-4">Please log in to access the Five-a-Side Finance Tracker.</p>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Admin Login</h2>
+            <p class="text-gray-600 mb-4">Log in to enable editing features.</p>
             <div class="space-y-4">
                 <div>
                     <label for="admin-email" class="block text-sm font-medium text-gray-700">Email</label>
@@ -124,6 +124,7 @@
                 </div>
                 <button id="admin-login-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Login</button>
                 <p id="auth-error-message" class="text-red-500 text-sm mt-2"></p>
+                <button id="close-login-modal-btn" class="w-full bg-gray-300 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-400 mt-2">Close</button>
             </div>
         </div>
     </div>
@@ -133,9 +134,10 @@
         <header class="mb-8">
             <h1 class="text-3xl font-bold text-gray-800">Five-a-Side Finance Tracker</h1>
             <p class="text-gray-600 mt-1">Manage your team's game fees and payments effortlessly.</p>
-            <p class="text-xs text-gray-500 mt-2">Current User ID: <span id="userId" class="font-mono bg-gray-200 px-1 rounded"></span> (Status: <span id="auth-status" class="font-bold"></span>)</p>
+            <p class="text-xs text-gray-500 mt-2">Data Source ID: <span id="userId" class="font-mono bg-gray-200 px-1 rounded"></span> (Status: <span id="auth-status" class="font-bold"></span>)</p>
             <div class="mt-2 text-right">
-                <button id="logout-btn" class="text-sm text-red-600 hover:text-red-800 hidden">Log Out</button>
+                <button id="open-login-modal-btn" class="text-sm text-blue-600 hover:text-blue-800">Admin Login</button>
+                <button id="logout-btn" class="text-sm text-red-600 hover:text-red-800 hidden ml-2">Log Out</button>
             </div>
         </header>
 
@@ -257,7 +259,7 @@
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, setDoc, deleteDoc, query, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
@@ -274,9 +276,10 @@
         
         const appId = 'default-football-tracker';
 
-        // IMPORTANT: Replace this with the actual UID of your admin user from Firebase Console -> Authentication -> Users.
-        // This UID will be used for all data storage/retrieval paths.
-        const ADMIN_UID = "VbrZ2srWbkQRYn0yM0L5nyruiMc2"; 
+        // IMPORTANT: This is the UID where ALL your data will be stored.
+        const DATA_OWNER_UID = "VbrZ2srWbkQRYn0yM0L5nyruiMc2"; 
+        // IMPORTANT: This is the UID of the user who can log in as admin and edit.
+        const ADMIN_LOGIN_UID = "Q7JRa29G7PhrAMIECH7VcGHcKIn1"; 
         
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app); 
@@ -284,21 +287,20 @@
         const auth = getAuth(app);
 
         // --- STATE ---
-        // currentUserId is now always fixed to ADMIN_UID for all data operations.
-        let currentUserId = ADMIN_UID; 
-        let currentAuthUser = null; // Stores the Firebase Auth user object from onAuthStateChanged
-        let isAdminLoggedIn = false; // Flag to control UI editing features
+        // currentUserId now ALWAYS points to the DATA_OWNER_UID for all Firestore operations.
+        let currentUserId = DATA_OWNER_UID; 
+        let currentAuthUser = null; // Stores the Firebase Auth user object (whoever is logged in, or null)
+        let isAdminLoggedIn = false; // Flag to control UI editing features (true if currentAuthUser.uid === ADMIN_LOGIN_UID)
 
         let currentSeasonId = null;
         let editingGameWeekId = null;
         let selectedPlayerForPayment = null; 
         let players = [];
         let seasons = [];
-        let allGameWeeks = []; // All game weeks from all seasons for global calculations
-        let allPayments = []; // All payments from all seasons for global calculations
+        let allGameWeeks = []; 
+        let allPayments = []; 
         let unsubscribes = []; 
-        let currentSeasonGameWeeks = []; // Game weeks for the currently selected season (for display)
-        // let currentSeasonPayments = []; // Not explicitly used but kept for consistency, payments are global now
+        let currentSeasonGameWeeks = []; 
 
         // --- DOM ELEMENTS ---
         const loadingOverlay = document.getElementById('loading-overlay');
@@ -307,9 +309,11 @@
         const adminPasswordInput = document.getElementById('admin-password');
         const adminLoginBtn = document.getElementById('admin-login-btn');
         const authErrorMessage = document.getElementById('auth-error-message');
+        const closeLoginModalBtn = document.getElementById('close-login-modal-btn'); // New Close button on login modal
 
-        const userIdSpan = document.getElementById('userId');
-        const authStatusSpan = document.getElementById('auth-status'); 
+        const userIdSpan = document.getElementById('userId'); // Displays DATA_OWNER_UID
+        const authStatusSpan = document.getElementById('auth-status'); // Displays auth status (Viewer / Admin)
+        const openLoginModalBtn = document.getElementById('open-login-modal-btn'); // New button to open login modal
         const logoutBtn = document.getElementById('logout-btn'); 
 
         const addPlayerBtn = document.getElementById('add-player-btn');
@@ -337,68 +341,52 @@
         const filterPlayerSelect = document.getElementById('filter-player-select');
         const playerStatusDetails = document.getElementById('player-status-details');
 
-        // Elements that should be editable only by admin
-        const editableElements = document.querySelectorAll('.editable-actions'); // Buttons/inputs
-        const editableActionsTh = document.querySelector('.editable-actions-th'); // Table header for actions
+        const editableElements = document.querySelectorAll('.editable-actions'); 
+        const editableActionsTh = document.querySelector('.editable-actions-th'); 
 
 
         // --- AUTHENTICATION & UI CONTROL ---
         onAuthStateChanged(auth, async (user) => {
-            currentAuthUser = user; // Store the currently authenticated user
+            currentAuthUser = user; 
 
-            userIdSpan.textContent = ADMIN_UID; // Always show the target data UID in the header
-            loadingOverlay.style.display = 'none'; // Hide initial loader once auth state is known
+            userIdSpan.textContent = DATA_OWNER_UID; // Always show the fixed data source UID
+            loadingOverlay.style.display = 'flex'; // Keep loading visible initially
 
-            if (user && user.uid === ADMIN_UID) {
-                // Admin is successfully logged in
+            if (user && user.uid === ADMIN_LOGIN_UID) {
+                // Admin is logged in
                 isAdminLoggedIn = true;
                 authStatusSpan.textContent = "Admin (Logged In)";
                 authStatusSpan.classList.remove('text-red-600');
                 authStatusSpan.classList.add('text-green-600');
                 logoutBtn.classList.remove('hidden'); // Show logout button
-                authContainer.classList.add('hidden'); // Hide login screen
+                openLoginModalBtn.classList.add('hidden'); // Hide admin login button
+                authContainer.classList.add('hidden'); // Hide login screen if it was open
 
-                // Initialize app data if it hasn't been loaded yet for this session
-                // We use a check on players/seasons array length to avoid redundant calls if user refreshes page while logged in
-                if (players.length === 0 && seasons.length === 0) { 
-                    loadingOverlay.style.display = 'flex'; // Show loading while data loads
-                    await initializeAppData(); 
-                } else {
-                    // Data is already loaded, just ensure editing features are enabled
-                    enableEditingFeatures();
-                }
+                enableEditingFeatures(); // Enable UI for editing
             } else {
-                // No admin is logged in (either unauthenticated or a different user)
+                // Not admin logged in (either unauthenticated or different user)
                 isAdminLoggedIn = false;
-                authStatusSpan.textContent = "Logged Out"; 
+                authStatusSpan.textContent = "Viewer (Read Only)";
                 authStatusSpan.classList.remove('text-green-600');
                 authStatusSpan.classList.add('text-red-600');
                 logoutBtn.classList.add('hidden'); // Hide logout button
-                authContainer.classList.remove('hidden'); // Show login screen
+                openLoginModalBtn.classList.remove('hidden'); // Show admin login button
+                authContainer.classList.add('hidden'); // Hide login screen unless user clicks admin login button
 
-                // Clear previously loaded data and disable editing features
-                players = [];
-                seasons = [];
-                allGameWeeks = [];
-                allPayments = [];
-                // Reset UI to reflect empty/unauthenticated state
-                summaryTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">Please log in to view data.</td></tr>`;
-                gameWeeksContainer.innerHTML = '';
-                playerListContainer.innerHTML = '';
-                seasonSelector.innerHTML = '';
-                filterPlayerSelect.innerHTML = '<option value="">All Players</option>'; // Clear filter options
-                playerStatusDetails.innerHTML = '<p class="text-gray-500 text-center">Select a player to see their payment and game details.</p>';
-                currentSeasonNameSpan.textContent = 'N/A';
-
-                disableEditingFeatures(); // Hide all editing features
+                disableEditingFeatures(); // Disable UI for editing
             }
+
+            // Always initialize data for the DATA_OWNER_UID, regardless of auth status
+            // This ensures read-only access for everyone.
+            await initializeAppData(); 
+            loadingOverlay.style.display = 'none'; // Hide loading after data is fetched.
         });
 
-        // Login button click handler
+        // Handler for login button within the modal
         adminLoginBtn.addEventListener('click', async () => {
             const email = adminEmailInput.value;
             const password = adminPasswordInput.value;
-            authErrorMessage.textContent = ''; // Clear previous errors
+            authErrorMessage.textContent = ''; 
 
             if (!email || !password) {
                 authErrorMessage.textContent = "Please enter email and password.";
@@ -408,15 +396,28 @@
             loadingOverlay.style.display = 'flex'; // Show loading during login attempt
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged will automatically handle UI updates upon successful login
+                // onAuthStateChanged will handle UI updates upon successful login
+                adminEmailInput.value = ''; // Clear fields
+                adminPasswordInput.value = '';
             } catch (error) {
                 console.error("Login failed:", error.code, error.message);
                 authErrorMessage.textContent = `Login failed: ${error.message}`;
-                loadingOverlay.style.display = 'none'; // Hide loading on login failure
+                loadingOverlay.style.display = 'none'; 
             }
         });
 
-        // Logout button click handler
+        // Handler for "Admin Login" button in header (to open modal)
+        openLoginModalBtn.addEventListener('click', () => {
+            authErrorMessage.textContent = ''; // Clear any previous error messages
+            authContainer.classList.remove('hidden');
+        });
+
+        // Handler for "Close" button in login modal
+        closeLoginModalBtn.addEventListener('click', () => {
+            authContainer.classList.add('hidden');
+        });
+
+        // Handler for logout button
         logoutBtn.addEventListener('click', async () => {
             try {
                 await signOut(auth);
@@ -433,10 +434,9 @@
             editableElements.forEach(el => {
                 el.classList.remove('hidden', 'opacity-50', 'pointer-events-none');
             });
-            if (editableActionsTh) editableActionsTh.classList.remove('hidden'); // Show the Actions column header
-            // Ensure individual buttons are shown (they might be hidden by render functions if initially disabled)
+            if (editableActionsTh) editableActionsTh.classList.remove('hidden'); 
             document.querySelectorAll('.delete-player-btn, .edit-gameweek-btn, .delete-gameweek-btn, .open-payment-modal-btn').forEach(btn => {
-                btn.style.display = ''; // Show buttons
+                btn.style.display = ''; 
                 btn.removeAttribute('disabled');
             });
             if (newPlayerNameInput) newPlayerNameInput.removeAttribute('disabled');
@@ -446,19 +446,18 @@
             editableElements.forEach(el => {
                 el.classList.add('hidden', 'opacity-50', 'pointer-events-none');
             });
-            if (editableActionsTh) editableActionsTh.classList.add('hidden'); // Hide the Actions column header
-            // Ensure individual buttons are hidden and disabled
+            if (editableActionsTh) editableActionsTh.classList.add('hidden'); 
              document.querySelectorAll('.delete-player-btn, .edit-gameweek-btn, .delete-gameweek-btn, .open-payment-modal-btn').forEach(btn => {
-                btn.style.display = 'none'; // Hide buttons
+                btn.style.display = 'none'; 
                 btn.setAttribute('disabled', 'true');
             });
             if (newPlayerNameInput) newPlayerNameInput.setAttribute('disabled', 'true');
         }
 
         // --- DATA INITIALIZATION & LISTENERS ---
-        // This function now relies on isAdminLoggedIn being true before proceeding.
+        // This function now runs regardless of login status to fetch data for viewers.
         async function initializeAppData() {
-            // All data operations target the ADMIN_UID's path
+            // All data operations explicitly target the DATA_OWNER_UID's path
             const basePath = `artifacts/${appId}/users/${currentUserId}`;
             
             // Listener for Players collection
@@ -474,23 +473,25 @@
             // Listener for Seasons collection
             const seasonsRef = collection(db, `${basePath}/seasons`);
             onSnapshot(seasonsRef, async (snapshot) => {
-                // If seasons collection is empty AND admin is logged in, seed initial data
+                // Only seed initial data IF admin is logged in AND seasons collection is empty
                 if (snapshot.empty && isAdminLoggedIn) { 
                     await seedInitialData();
                 } else if (!snapshot.empty) {
-                    // If seasons exist, load them
+                    // Load seasons if they exist
                     seasons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.startDate.localeCompare(b.startDate));
                     renderSeasonSelector();
-                    // Set default current season if not already set or if the old one is gone
                     if (!currentSeasonId || !seasons.find(s => s.id === currentSeasonId)) {
                         currentSeasonId = seasons[seasons.length - 1]?.id; 
                     }
                     seasonSelector.value = currentSeasonId;
                     updateCurrentSeasonDisplay(); 
-                    await fetchAllSeasonData(); // Fetch all game weeks and payments
+                    await fetchAllSeasonData(); 
                 } else {
-                    // Seasons empty and not admin logged in, ensure loading overlay is hidden and UI reflects empty state
-                    loadingOverlay.style.display = 'none';
+                    // Seasons empty and not admin logged in, just display empty state
+                    // This scenario is for initial load before admin logs in and seeds data.
+                    loadingOverlay.style.display = 'none'; // Ensure loader is off
+                    summaryTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No data available. Admin must log in to set up.</td></tr>`;
+                    gameWeeksContainer.innerHTML = '';
                 }
             });
         }
@@ -503,19 +504,19 @@
             allGameWeeks = [];
             allPayments = [];
 
-            const basePath = `artifacts/${appId}/users/${currentUserId}`;
+            const basePath = `artifacts/${appId}/users/${currentUserId}`; // All data operations target DATA_OWNER_UID
 
             // Set up listeners for all game weeks across all seasons
-            // This ensures global calculations are always up-to-date
             for (const season of seasons) {
                 const gameWeeksRef = collection(db, `${basePath}/seasons/${season.id}/gameWeeks`);
                 const unsubGw = onSnapshot(gameWeeksRef, (snapshot) => {
                     const newGameWeeks = snapshot.docs.map(doc => ({ id: doc.id, seasonId: season.id, ...doc.data() }));
                     
-                    // Update allGameWeeks by removing old entries for this season and adding new ones
+                    // Update allGameWeeks by filtering out old entries for this season and adding new ones
                     allGameWeeks = allGameWeeks.filter(gw => gw.seasonId !== season.id);
                     allGameWeeks = allGameWeeks.concat(newGameWeeks);
                     
+                    // Filter game weeks for the currently selected season's display
                     currentSeasonGameWeeks = allGameWeeks.filter(gw => gw.seasonId === currentSeasonId);
 
                     renderGameWeeks(); 
@@ -559,7 +560,6 @@
             players.sort((a, b) => a.name.localeCompare(b.name)).forEach(player => {
                 const playerTag = document.createElement('div');
                 playerTag.className = 'bg-gray-200 text-gray-800 text-sm font-medium px-3 py-1 rounded-full flex items-center gap-2';
-                // Only show delete button if admin is logged in
                 const deleteButtonHtml = isAdminLoggedIn ? `<button data-player-id="${player.id}" class="delete-player-btn text-red-500 hover:text-red-700 font-bold">&times;</button>` : '';
                 playerTag.innerHTML = `<span>${player.name}</span>${deleteButtonHtml}`;
                 playerListContainer.appendChild(playerTag);
@@ -572,7 +572,6 @@
         function renderGameWeeks() {
             gameWeeksContainer.innerHTML = '';
             
-            // Display game weeks for the currently selected season
             const numberedGameWeeks = currentSeasonGameWeeks
                 .sort((a, b) => new Date(a.date) - new Date(b.date))
                 .map((gw, index) => ({ ...gw, gameWeekNumber: index + 1 }))
@@ -583,7 +582,7 @@
                 const cost = parseFloat(gw.totalCost || 0);
                 const allPlayersInvolved = gw.playerIds.flatMap(id => {
                     const playerFound = players.find(p => p.id === id);
-                    if (!playerFound) return []; // Skip if player ID is invalid
+                    if (!playerFound) return []; 
                     const paidForBy = gw.paidForBy && gw.paidForBy[id] ? gw.paidForBy[id] : null;
                     const payerName = players.find(p => p.id === paidForBy)?.name;
                     return paidForBy ? [{id, name: `${playerFound.name} (paid by ${payerName || 'Unknown'})`}] : [{id, name: playerFound.name}];
@@ -594,7 +593,6 @@
 
                 const card = document.createElement('div');
                 card.className = 'bg-white p-4 rounded-lg shadow-sm border';
-                // Only show edit/delete buttons if admin is logged in
                 const actionsHtml = isAdminLoggedIn ? `
                         <div class="flex flex-col items-end gap-2">
                              <button data-gameweek-id="${gw.id}" class="edit-gameweek-btn text-blue-500 hover:text-blue-700 text-xs font-semibold">Edit</button>
@@ -624,7 +622,6 @@
             });
         }
 
-        // Calculates and renders the overall financial summary for all players
         function calculateAndRenderAll() {
             if (!players.length) { 
                 summaryTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">Add players to begin.</td></tr>`;
@@ -638,14 +635,13 @@
                 const row = document.createElement('tr');
                 const balanceClass = data.balance < -0.01 ? 'text-red-600 font-semibold' : (data.balance > 0.01 ? 'text-green-600 font-semibold' : 'text-gray-700');
                 
-                let actionsHtml = ''; // Empty by default
+                let actionsHtml = ''; 
                 if (isAdminLoggedIn) {
                     actionsHtml = `
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <button data-player-id="${data.id}" class="open-payment-modal-btn text-indigo-600 hover:text-indigo-900">Add Payment</button>
                         </td>`;
                 } else {
-                    // For viewers, ensure the cell exists even if empty, or colspan would be wrong
                     actionsHtml = `<td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium"></td>`;
                 }
 
@@ -663,7 +659,6 @@
             });
         }
 
-        // Calculates balances based on all game weeks and all payments
         function calculatePlayerBalances() {
             const playerBalances = players.map(player => ({
                 id: player.id,
@@ -673,7 +668,6 @@
                 balance: 0
             }));
 
-            // Sum up total owed from ALL game weeks, accounting for paidForBy
             allGameWeeks.forEach(gw => {
                 const cost = parseFloat(gw.totalCost || 0);
                 const numPlayers = gw.playerIds.length;
@@ -696,7 +690,6 @@
                 }
             });
 
-            // Sum up total paid from ALL payment records
             allPayments.forEach(payment => {
                 const playerBalance = playerBalances.find(p => p.id === payment.playerId);
                 if (playerBalance) {
@@ -722,7 +715,6 @@
             filterPlayerSelect.value = filterPlayerSelect.value; 
         }
 
-        // Renders detailed payment and game status for a selected player across all seasons
         function renderPlayerStatusDetails(selectedPlayerId) {
             playerStatusDetails.innerHTML = ''; 
 
@@ -734,10 +726,8 @@
             const player = players.find(p => p.id === selectedPlayerId);
             if (!player) return;
 
-            // List of all game costs this player is financially responsible for (directly or by paying for others)
             const playerOwedGamesList = []; 
             
-            // Collect all games this player is responsible for
             allGameWeeks.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach(gw => {
                 const totalCost = parseFloat(gw.totalCost || 0);
                 const numPlayers = gw.playerIds.length;
@@ -751,19 +741,17 @@
                             id: gw.id,
                             date: gw.date,
                             cost: individualCost,
-                            paid: false, // Will be updated by allocation logic
-                            paidForPlayerName: playedPlayerId !== selectedPlayerId ? players.find(p => p.id === playedPlayerId)?.name : null // Name of player they paid for
+                            paid: false, 
+                            paidForPlayerName: playedPlayerId !== selectedPlayerId ? players.find(p => p.id === playedPlayerId)?.name : null 
                         });
                     }
                 });
             });
 
-            // Payments made by this player, sorted earliest first
             const playerPayments = allPayments
                 .filter(p => p.playerId === selectedPlayerId)
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-            // Allocate payments to games using a greedy approach (earliest game first)
             let currentPaymentIndex = 0;
             let currentPaymentRemaining = 0;
 
@@ -773,25 +761,23 @@
                 while (gameCostRemaining > 0.01 && currentPaymentIndex < playerPayments.length) { 
                     const currentPayment = playerPayments[currentPaymentIndex];
 
-                    // If we finished the previous payment, grab the next one's full amount
                     if (currentPaymentRemaining <= 0.01) {
                          currentPaymentRemaining = parseFloat(currentPayment.amount);
                     }
                     
-                    if (currentPaymentRemaining >= gameCostRemaining - 0.01) { // Current payment can cover this game
+                    if (currentPaymentRemaining >= gameCostRemaining - 0.01) { 
                         currentPaymentRemaining -= gameCostRemaining;
-                        gameCostRemaining = 0; // Game fully paid
-                    } else { // Current payment only partially covers this game
+                        gameCostRemaining = 0; 
+                    } else { 
                         gameCostRemaining -= currentPaymentRemaining;
-                        currentPaymentRemaining = 0; // Current payment fully consumed
-                        currentPaymentIndex++; // Move to next payment
+                        currentPaymentRemaining = 0; 
+                        currentPaymentIndex++; 
                     }
                 }
                 
-                game.paid = gameCostRemaining < 0.01; // Mark as paid if remaining cost is negligible
+                game.paid = gameCostRemaining < 0.01; 
             });
 
-            // Display Payments History
             let paymentsHtml = `
                 <h3 class="text-lg font-semibold mt-4 mb-2">Payment History for ${player.name}:</h3>
                 <div class="bg-gray-50 p-3 rounded-md max-h-48 overflow-y-auto">
@@ -803,7 +789,6 @@
                 </div>
             `;
 
-            // Display Game Status
             let gameStatusHtml = `
                 <h3 class="text-lg font-semibold mt-4 mb-2">Game Status for ${player.name}:</h3>
                 <div class="bg-gray-50 p-3 rounded-md max-h-60 overflow-y-auto">
@@ -828,10 +813,8 @@
         seasonSelector.addEventListener('change', (e) => {
             currentSeasonId = e.target.value;
             updateCurrentSeasonDisplay();
-            // Update gameWeeks displayed in the right column
             currentSeasonGameWeeks = allGameWeeks.filter(gw => gw.seasonId === currentSeasonId);
             renderGameWeeks(); 
-            // Re-render player details to reflect current state
             renderPlayerStatusDetails(filterPlayerSelect.value); 
         });
 
@@ -843,7 +826,7 @@
             if (!isAdminLoggedIn) { alert("You must be logged in as an administrator to add players."); return; }
             const name = newPlayerNameInput.value.trim();
             if (name) {
-                const basePath = `artifacts/${appId}/users/${currentUserId}`; // Uses ADMIN_UID path
+                const basePath = `artifacts/${appId}/users/${currentUserId}`; 
                 await addDoc(collection(db, `${basePath}/players`), { name });
                 newPlayerNameInput.value = '';
             }
@@ -852,14 +835,12 @@
         async function deletePlayer(playerId) {
             if (!isAdminLoggedIn) { alert("You must be logged in as an administrator to delete players."); return; }
             if (confirm("Are you sure you want to delete this player? This will remove them from all records across all seasons and impact calculations.")) {
-                const basePath = `artifacts/${appId}/users/${currentUserId}`; // Uses ADMIN_UID path
+                const basePath = `artifacts/${appId}/users/${currentUserId}`; 
                 const batch = writeBatch(db);
 
-                // Delete the player document itself
                 const playerDocRef = doc(db, `${basePath}/players`, playerId);
                 batch.delete(playerDocRef);
 
-                // Remove player from all gameWeeks across ALL seasons
                 for (const season of seasons) {
                     const seasonGameWeeksRef = collection(db, `${basePath}/seasons/${season.id}/gameWeeks`);
                     const gameWeeksSnapshot = await getDocs(seasonGameWeeksRef);
@@ -875,11 +856,11 @@
                         });
                         
                         const updatedPaidForBy = { ...gwData.paidForBy };
-                        if (updatedPaidForBy[playerId]) { // If this player was paid for
+                        if (updatedPaidForBy[playerId]) { 
                             delete updatedPaidForBy[playerId];
                             updated = true;
                         }
-                        for (const pId in updatedPaidForBy) { // If this player paid for someone else
+                        for (const pId in updatedPaidForBy) { 
                             if (updatedPaidForBy[pId] === playerId) {
                                 delete updatedPaidForBy[pId]; 
                                 updated = true;
@@ -892,7 +873,6 @@
                     });
                 }
 
-                // Delete all payments made by this player (from the top-level payments collection)
                 const userPaymentsRef = collection(db, `${basePath}/payments`);
                 const paymentsSnapshot = await getDocs(userPaymentsRef);
                 paymentsSnapshot.forEach(paymentDoc => {
@@ -909,7 +889,7 @@
         async function deleteGameWeek(gameWeekId) {
             if (!isAdminLoggedIn) { alert("You must be logged in as an administrator to delete game weeks."); return; }
             if (confirm("Are you sure you want to delete this game week? This cannot be undone.")) {
-                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; // Uses ADMIN_UID path
+                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; 
                 await deleteDoc(doc(db, `${basePath}/gameWeeks`, gameWeekId));
             }
         }
@@ -958,7 +938,6 @@
             gameWeekModal.style.display = 'block';
         }
 
-        // Helper to get current paidForBy state from modal (for re-render if checkboxes change)
         function getPaidForByFromModal() {
             const currentPaidForBy = {};
             paidForByOthersSection.querySelectorAll('.paid-for-by-select').forEach(select => {
@@ -971,7 +950,6 @@
             return currentPaidForBy;
         }
 
-        // Renders the dropdowns for "Players Paid For By Others"
         function updatePaidForByOthersSection(initialPaidForBy = {}) {
             paidForByOthersSection.innerHTML = ''; 
 
@@ -1002,7 +980,6 @@
             });
         }
 
-        // Event listener for saving a game week (Add/Edit)
         addGameWeekBtn.addEventListener('click', () => openGameWeekModal());
         modalCloseBtn.addEventListener('click', () => gameWeekModal.style.display = 'none');
         window.addEventListener('click', (event) => {
@@ -1030,7 +1007,7 @@
                 return;
             }
             
-            const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; // Uses ADMIN_UID path
+            const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; 
             const gameWeekData = { date, totalCost: parseFloat(totalCost), playerIds, paidForBy };
 
             if (editingGameWeekId) {
@@ -1073,7 +1050,7 @@
                 return;
             }
 
-            const basePath = `artifacts/${appId}/users/${currentUserId}`; // Uses ADMIN_UID path
+            const basePath = `artifacts/${appId}/users/${currentUserId}`; 
             await addDoc(collection(db, `${basePath}/payments`), {
                 playerId: selectedPlayerForPayment,
                 amount: paymentAmount,
@@ -1102,7 +1079,7 @@
             const gameWeekExists = currentSeasonGameWeeks.some(gw => gw.date === lastMondayStr);
 
             if (!gameWeekExists) {
-                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; // Uses ADMIN_UID path
+                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; 
                 await addDoc(collection(db, `${basePath}/gameWeeks`), {
                     date: lastMondayStr, totalCost: 39.00, playerIds: [], paidForBy: {}
                 });
@@ -1111,7 +1088,7 @@
 
         async function seedInitialData() {
             // Only seed if admin is logged in (already checked before calling)
-            const basePath = `artifacts/${appId}/users/${currentUserId}`; // Uses ADMIN_UID path
+            const basePath = `artifacts/${appId}/users/${currentUserId}`; 
             const batch = writeBatch(db);
 
             const playerNames = [
@@ -1157,7 +1134,7 @@
         }
 
         // --- STARTUP ---
-        // The onAuthStateChanged listener handles showing the login or app content automatically.
+        // The onAuthStateChanged listener handles initial data loading and UI setup.
 
     </script>
 </body>
