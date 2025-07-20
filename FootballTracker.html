@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Five-a-Side Finance Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 100; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            padding-top: 60px;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 0.5rem;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="loading-overlay">
+        <div class="loader"></div>
+        <p class="text-gray-600">Loading your data...</p>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Five-a-Side Finance Tracker</h1>
+            <p class="text-gray-600 mt-1">Manage your team's game fees and payments effortlessly.</p>
+            <p class="text-xs text-gray-500 mt-2">Your User ID: <span id="userId" class="font-mono bg-gray-200 px-1 rounded"></span></p>
+        </header>
+
+        <div class="mb-6">
+            <label for="season-selector" class="block text-sm font-medium text-gray-700">Select Season</label>
+            <select id="season-selector" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                </select>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 space-y-8">
+                <section>
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Financial Summary</h2>
+                    <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Owed</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Paid</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summary-table-body" class="bg-white divide-y divide-gray-200">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                 <section>
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Players</h2>
+                     <div class="bg-white p-6 rounded-lg shadow-md">
+                        <div id="player-list" class="flex flex-wrap gap-3 mb-4">
+                            </div>
+                        <div class="flex gap-2">
+                             <input type="text" id="new-player-name" placeholder="Enter new player name" class="flex-grow p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                             <button id="add-player-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Add Player</button>
+                        </div>
+                     </div>
+                </section>
+            </div>
+
+            <div class="lg:col-span-1 space-y-6">
+                 <h2 class="text-2xl font-semibold text-gray-700">Game Weeks</h2>
+                 <button id="add-gameweek-btn" class="w-full bg-green-600 text-white px-4 py-3 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-md">
+                    + Add New Game Week
+                </button>
+                <div id="gameweeks-container" class="space-y-4 mt-4">
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameweek-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="modal-close-btn">&times;</span>
+            <h3 id="modal-title" class="text-xl font-semibold mb-4">Add New Game Week</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="gameweek-date" class="block text-sm font-medium text-gray-700">Game Date</label>
+                    <input type="date" id="gameweek-date" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                </div>
+                <div>
+                    <label for="gameweek-cost" class="block text-sm font-medium text-gray-700">Total Cost (£)</label>
+                    <input type="number" id="gameweek-cost" placeholder="e.g., 39.00" step="0.01" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                </div>
+                <div>
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">Who Played?</h4>
+                    <div id="modal-player-list" class="space-y-2 max-h-60 overflow-y-auto">
+                        </div>
+                </div>
+                <button id="save-gameweek-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Save Game Week</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, setDoc, deleteDoc, query, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // If you're using analytics, make sure to import it. Otherwise, you can remove this line.
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // --- CONFIG & INITIALIZATION ---
+        // Your web app's Firebase configuration (pasted directly here)
+        const firebaseConfig = {
+            apiKey: "AIzaSyD66s7x0dvADRqvIEUE1iB1XWzQpIDFKec",
+            authDomain: "footballtracking-728b2.firebaseapp.com",
+            projectId: "footballtracking-728b2",
+            storageBucket: "footballtracking-728b2.firebasestorage.app",
+            messagingSenderId: "658190902452",
+            appId: "1:658190902452:web:9527e2dd19fcf4569ca3e1",
+            measurementId: "G-1F3SVRJ7NN"
+        };
+        
+        // This appId is used for your Firestore path, ensure it's consistent.
+        const appId = 'default-football-tracker'; // This was defined in your original script
+
+        const app = initializeApp(firebaseConfig);
+        // Initialize Analytics if you're using it. If not, this line and the import can be removed.
+        const analytics = getAnalytics(app); 
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // --- STATE ---
+        let currentUserId = null;
+        let currentSeasonId = null;
+        let editingGameWeekId = null;
+        let players = [];
+        let seasons = [];
+        let gameWeeks = [];
+        let payments = [];
+        let unsubscribes = []; // To store listener unsub functions
+
+        // --- DOM ELEMENTS ---
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const addPlayerBtn = document.getElementById('add-player-btn');
+        const newPlayerNameInput = document.getElementById('new-player-name');
+        const playerListContainer = document.getElementById('player-list');
+        const summaryTableBody = document.getElementById('summary-table-body');
+        const addGameWeekBtn = document.getElementById('add-gameweek-btn');
+        const gameWeekModal = document.getElementById('gameweek-modal');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+        const modalTitle = document.getElementById('modal-title');
+        const saveGameWeekBtn = document.getElementById('save-gameweek-btn');
+        const modalPlayerList = document.getElementById('modal-player-list');
+        const gameWeeksContainer = document.getElementById('gameweeks-container');
+        const userIdSpan = document.getElementById('userId');
+        const seasonSelector = document.getElementById('season-selector');
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                userIdSpan.textContent = currentUserId;
+                await initializeAppData();
+            } else {
+                // If no user, sign in anonymously to get a user ID
+                await signInAnonymously(auth); 
+                // Alternatively, if you want to handle cases where anonymous sign-in fails
+                // loadingOverlay.innerHTML = `<p class="text-red-500">Error: Could not connect or authenticate. Please refresh.</p>`;
+            }
+        });
+
+        async function signIn() {
+            // This function is now mostly handled by onAuthStateChanged directly attempting signInAnonymously
+            // if no user is found. If you had custom tokens, you'd use signInWithCustomToken(auth, token).
+            // For this app, anonymous auth is simpler for quick setup.
+            console.log("Attempting sign in...");
+        }
+
+        // --- DATA INITIALIZATION & LISTENERS ---
+        async function initializeAppData() {
+            const basePath = `artifacts/${appId}/users/${currentUserId}`;
+            
+            // Listen for changes to players
+            const playersRef = collection(db, `${basePath}/players`);
+            onSnapshot(playersRef, (snapshot) => {
+                players = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderPlayers();
+                calculateAndRenderAll();
+            });
+
+            // Listen for changes to seasons
+            const seasonsRef = collection(db, `${basePath}/seasons`);
+            onSnapshot(seasonsRef, async (snapshot) => {
+                if (snapshot.empty) {
+                    await seedInitialData();
+                } else {
+                    seasons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.startDate.localeCompare(b.startDate));
+                    renderSeasonSelector();
+                    // Set or update currentSeasonId if not already set or if the current one is gone
+                    if (!currentSeasonId || !seasons.find(s => s.id === currentSeasonId)) {
+                        currentSeasonId = seasons[seasons.length - 1]?.id; // Default to the latest season
+                    }
+                    seasonSelector.value = currentSeasonId; // Ensure selector shows current season
+                    await fetchDataForSeason(currentSeasonId);
+                    loadingOverlay.style.display = 'none';
+                }
+            });
+        }
+        
+        async function fetchDataForSeason(seasonId) {
+            if (!seasonId) return;
+
+            // Unsubscribe from previous season's listeners to prevent memory leaks
+            unsubscribes.forEach(unsub => unsub());
+            unsubscribes = [];
+
+            const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${seasonId}`;
+            const gameWeeksRef = collection(db, `${basePath}/gameWeeks`);
+            const paymentsRef = collection(db, `${basePath}/payments`);
+
+            // Listen for changes to game weeks
+            const unsubGameWeeks = onSnapshot(gameWeeksRef, (snapshot) => {
+                gameWeeks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderGameWeeks();
+                calculateAndRenderAll();
+                checkAndCreateAutoGameWeek(); // Check for auto-creation after rendering
+            });
+
+            // Listen for changes to payments
+            const unsubPayments = onSnapshot(paymentsRef, (snapshot) => {
+                payments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                calculateAndRenderAll();
+            });
+            
+            unsubscribes.push(unsubGameWeeks, unsubPayments);
+        }
+
+        // --- RENDERING FUNCTIONS ---
+        function renderSeasonSelector() {
+            seasonSelector.innerHTML = '';
+            seasons.forEach(season => {
+                const option = document.createElement('option');
+                option.value = season.id;
+                option.textContent = season.name;
+                seasonSelector.appendChild(option);
+            });
+        }
+
+        function renderPlayers() {
+            playerListContainer.innerHTML = '';
+            players.sort((a, b) => a.name.localeCompare(b.name)).forEach(player => {
+                const playerTag = document.createElement('div');
+                playerTag.className = 'bg-gray-200 text-gray-800 text-sm font-medium px-3 py-1 rounded-full flex items-center gap-2';
+                playerTag.innerHTML = `<span>${player.name}</span><button data-player-id="${player.id}" class="delete-player-btn text-red-500 hover:text-red-700 font-bold">&times;</button>`;
+                playerListContainer.appendChild(playerTag);
+            });
+            document.querySelectorAll('.delete-player-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => deletePlayer(e.currentTarget.dataset.playerId));
+            });
+        }
+
+        function renderGameWeeks() {
+            gameWeeksContainer.innerHTML = '';
+            
+            // Sort by date ascending to determine game week number, then reverse for display
+            const numberedGameWeeks = gameWeeks
+                .sort((a, b) => new Date(a.date) - new Date(b.date))
+                .map((gw, index) => ({ ...gw, gameWeekNumber: index + 1 }))
+                .sort((a, b) => new Date(b.date) - new Date(a.date)); // Reverse for latest first display
+
+
+            numberedGameWeeks.forEach(gw => {
+                const cost = parseFloat(gw.totalCost || 0);
+                const playersWhoPlayed = players.filter(p => gw.playerIds.includes(p.id));
+                const numPlayers = playersWhoPlayed.length;
+                const costPerPlayer = numPlayers > 0 ? (cost / numPlayers) : 0;
+
+                const card = document.createElement('div');
+                card.className = 'bg-white p-4 rounded-lg shadow-sm border';
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-bold text-gray-800">Game Week ${gw.gameWeekNumber}: ${new Date(gw.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                            <p class="text-sm text-gray-600">Total: £${cost.toFixed(2)}</p>
+                            <p class="text-xs text-gray-500">${numPlayers} players (£${costPerPlayer.toFixed(2)} each)</p>
+                        </div>
+                        <div class="flex flex-col items-end gap-2">
+                             <button data-gameweek-id="${gw.id}" class="edit-gameweek-btn text-blue-500 hover:text-blue-700 text-xs font-semibold">Edit</button>
+                             <button data-gameweek-id="${gw.id}" class="delete-gameweek-btn text-red-400 hover:text-red-600 text-xs">&times; Delete</button>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-xs text-gray-500">${playersWhoPlayed.map(p => p.name).join(', ') || 'No players selected'}</div>`;
+                gameWeeksContainer.appendChild(card);
+            });
+
+            document.querySelectorAll('.delete-gameweek-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => deleteGameWeek(e.currentTarget.dataset.gameweekId));
+            });
+            document.querySelectorAll('.edit-gameweek-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => openGameWeekModal(e.currentTarget.dataset.gameweekId));
+            });
+        }
+
+        function calculateAndRenderAll() {
+            if (!players.length || !currentSeasonId) {
+                summaryTableBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">Select a season to begin.</td></tr>`;
+                return;
+            }
+
+            const summaryData = players.map(player => {
+                const totalOwed = gameWeeks.reduce((total, gw) => {
+                    if (gw.playerIds.includes(player.id)) {
+                        const numPlayers = gw.playerIds.length;
+                        return total + (numPlayers > 0 ? (parseFloat(gw.totalCost) / numPlayers) : 0);
+                    }
+                    return total;
+                }, 0);
+
+                const paymentRecord = payments.find(p => p.playerId === player.id);
+                const totalPaid = paymentRecord ? parseFloat(paymentRecord.amount) : 0;
+                const balance = totalPaid - totalOwed;
+
+                return { ...player, totalOwed, totalPaid, balance };
+            });
+            
+            summaryTableBody.innerHTML = '';
+            summaryData.sort((a,b) => a.name.localeCompare(b.name)).forEach(data => {
+                const row = document.createElement('tr');
+                const balanceClass = data.balance < -0.01 ? 'text-red-600 font-semibold' : (data.balance > 0.01 ? 'text-green-600 font-semibold' : 'text-gray-700');
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${data.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">£${data.totalOwed.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input type="number" value="${data.totalPaid.toFixed(2)}" data-player-id="${data.id}" class="payment-input w-24 p-1 border rounded-md" step="0.01">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm ${balanceClass}">£${data.balance.toFixed(2)}</td>`;
+                summaryTableBody.appendChild(row);
+            });
+
+            document.querySelectorAll('.payment-input').forEach(input => {
+                input.addEventListener('change', handlePaymentUpdate);
+            });
+        }
+
+        // --- EVENT HANDLERS & FIRESTORE LOGIC ---
+        seasonSelector.addEventListener('change', (e) => {
+            currentSeasonId = e.target.value;
+            fetchDataForSeason(currentSeasonId);
+        });
+
+        addPlayerBtn.addEventListener('click', async () => {
+            const name = newPlayerNameInput.value.trim();
+            if (name) {
+                const basePath = `artifacts/${appId}/users/${currentUserId}`;
+                await addDoc(collection(db, `${basePath}/players`), { name });
+                newPlayerNameInput.value = '';
+            }
+        });
+        
+        async function deletePlayer(playerId) {
+            if (confirm("Are you sure you want to delete this player? This will remove them from all records for all seasons.")) {
+                const basePath = `artifacts/${appId}/users/${currentUserId}`;
+                await deleteDoc(doc(db, `${basePath}/players`, playerId));
+            }
+        }
+        
+        async function deleteGameWeek(gameWeekId) {
+            if (confirm("Are you sure you want to delete this game week?")) {
+                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`;
+                await deleteDoc(doc(db, `${basePath}/gameWeeks`, gameWeekId));
+            }
+        }
+
+        async function handlePaymentUpdate(e) {
+            const playerId = e.target.dataset.playerId;
+            const amount = parseFloat(e.target.value);
+            if (!isNaN(amount) && amount >= 0) {
+                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`;
+                const paymentDocRef = doc(db, `${basePath}/payments`, playerId);
+                await setDoc(paymentDocRef, { amount, playerId });
+            }
+        }
+
+        // --- MODAL LOGIC ---
+        function openGameWeekModal(gameWeekId = null) {
+            editingGameWeekId = gameWeekId;
+            modalPlayerList.innerHTML = '';
+            
+            let dateValue = new Date().toISOString().split('T')[0];
+            let costValue = '39.00'; // Default cost
+            let existingPlayerIds = [];
+
+            if (editingGameWeekId) {
+                const gw = gameWeeks.find(g => g.id === editingGameWeekId);
+                modalTitle.textContent = 'Edit Game Week';
+                saveGameWeekBtn.textContent = 'Update Game Week';
+                dateValue = gw.date;
+                costValue = gw.totalCost.toFixed(2);
+                existingPlayerIds = gw.playerIds;
+            } else {
+                modalTitle.textContent = 'Add New Game Week';
+                saveGameWeekBtn.textContent = 'Save Game Week';
+            }
+
+            document.getElementById('gameweek-date').value = dateValue;
+            document.getElementById('gameweek-cost').value = costValue;
+
+            // Populate player checkboxes in the modal
+            players.sort((a, b) => a.name.localeCompare(b.name)).forEach(player => {
+                const isChecked = existingPlayerIds.includes(player.id) ? 'checked' : '';
+                const checkboxDiv = document.createElement('div');
+                checkboxDiv.className = 'flex items-center';
+                checkboxDiv.innerHTML = `<input id="player-${player.id}" type="checkbox" value="${player.id}" ${isChecked} class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"><label for="player-${player.id}" class="ml-3 block text-sm text-gray-700">${player.name}</label>`;
+                modalPlayerList.appendChild(checkboxDiv);
+            });
+            
+            gameWeekModal.style.display = 'block';
+        }
+
+        addGameWeekBtn.addEventListener('click', () => openGameWeekModal());
+        modalCloseBtn.addEventListener('click', () => gameWeekModal.style.display = 'none');
+        window.addEventListener('click', (event) => {
+            if (event.target == gameWeekModal) gameWeekModal.style.display = 'none';
+        });
+
+        saveGameWeekBtn.addEventListener('click', async () => {
+            const date = document.getElementById('gameweek-date').value;
+            const totalCost = document.getElementById('gameweek-cost').value;
+            const playerIds = Array.from(modalPlayerList.querySelectorAll('input:checked')).map(cb => cb.value);
+
+            if (!date || !totalCost) {
+                alert('Please fill in both the date and total cost.'); // Basic alert
+                return;
+            }
+            
+            const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`;
+            const gameWeekData = { date, totalCost: parseFloat(totalCost), playerIds };
+
+            if (editingGameWeekId) {
+                const gameWeekDocRef = doc(db, `${basePath}/gameWeeks`, editingGameWeekId);
+                await updateDoc(gameWeekDocRef, gameWeekData);
+            } else {
+                await addDoc(collection(db, `${basePath}/gameWeeks`), gameWeekData);
+            }
+
+            gameWeekModal.style.display = 'none';
+        });
+        
+        // --- AUTOMATION & SEEDING ---
+        async function checkAndCreateAutoGameWeek() {
+            if (!currentSeasonId || gameWeeks.length >= 14) return; // Limit auto-creation to avoid excessive docs
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize to start of day
+            const dayOfWeek = today.getDay(); // Sunday - 0, Monday - 1, etc.
+            
+            // Calculate last Monday's date
+            const lastMonday = new Date(today);
+            lastMonday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1)); // If today is Sunday (0), go back 6 days. Otherwise, go back dayOfWeek-1 days.
+            
+            const lastMondayStr = lastMonday.toISOString().split('T')[0];
+
+            // Check if a game week for this Monday already exists
+            const gameWeekExists = gameWeeks.some(gw => gw.date === lastMondayStr);
+
+            if (!gameWeekExists) {
+                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`;
+                await addDoc(collection(db, `${basePath}/gameWeeks`), {
+                    date: lastMondayStr, totalCost: 39.00, playerIds: [] // Default cost and no players
+                });
+            }
+        }
+
+        async function seedInitialData() {
+            const basePath = `artifacts/${appId}/users/${currentUserId}`;
+            const batch = writeBatch(db);
+
+            const playerNames = [
+                "Keiaan McLean", "Joshua Merry", "Alex Merry", "Corey McLean", "Brandon MacDonald", 
+                "Danush", "Alfie", "Alex Higgins", "Ben Higgins", "James Bannister", 
+                "Keaton McLean", "Charlie", "James Britton", "Jay Jones"
+            ];
+            playerNames.forEach(name => {
+                const playerRef = doc(collection(db, `${basePath}/players`));
+                batch.set(playerRef, { name });
+            });
+            
+            // Create initial seasons (e.g., Winter 2025, Spring 2025)
+            const winterSeasonRef = doc(collection(db, `${basePath}/seasons`));
+            batch.set(winterSeasonRef, { name: "Winter 2025", startDate: "2025-01-06" });
+            const springSeasonRef = doc(collection(db, `${basePath}/seasons`));
+            batch.set(springSeasonRef, { name: "Spring 2025", startDate: "2025-04-07" });
+
+            // Add some initial game weeks for Winter 2025
+            const winterDates = ['2025-01-06', '2025-01-20', '2025-02-03', '2025-02-17', '2025-03-03', '2025-03-17', '2025-03-31'];
+            winterDates.forEach(date => {
+                const gwRef = doc(collection(db, `${basePath}/seasons/${winterSeasonRef.id}/gameWeeks`));
+                batch.set(gwRef, { date, totalCost: 39.00, playerIds: [] });
+            });
+
+            // Add some initial game weeks for Spring 2025
+            const springDates = [
+                '2025-04-07', '2025-04-14', '2025-04-21', '2025-04-28', 
+                '2025-05-05', '2025-05-12', '2025-05-19', '2025-05-26',
+                '2025-06-02', '2025-06-09', '2025-06-16', '2025-06-23',
+                '2025-06-30', '2025-07-07' // Added current date's previous Monday logic to ensure auto-add for current week works.
+            ];
+            springDates.forEach(date => {
+                const gwRef = doc(collection(db, `${basePath}/seasons/${springSeasonRef.id}/gameWeeks`));
+                batch.set(gwRef, { date, totalCost: 39.00, playerIds: [] });
+            });
+
+
+            await batch.commit();
+            console.log("Initial data seeded!");
+        }
+
+        // --- STARTUP ---
+        // Call signIn implicitly via onAuthStateChanged, which will trigger anonymous sign-in if no user is authenticated.
+        // No need to explicitly call signIn() here as onAuthStateChanged handles it.
+
+    </script>
+</body>
+</html>
