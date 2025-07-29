@@ -487,7 +487,7 @@
                     renderGameWeeks(); 
                     calculateAndRenderAll(); 
                     renderPlayerStatusDetails(filterPlayerSelect.value); 
-                    checkAndCreateAutoGameWeek();
+                    // checkAndCreateAutoGameWeek(); // This is now disabled
                     loadingOverlay.style.display = 'none';
                 });
                 unsubscribes.push(unsubGw);
@@ -1019,25 +1019,8 @@
         
         // --- AUTOMATION & SEEDING ---
         async function checkAndCreateAutoGameWeek() {
-            if (!isAdminLoggedIn || !currentSeasonId || currentSeasonGameWeeks.length >= 14) return; 
-
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); 
-            const dayOfWeek = today.getDay(); 
-            
-            const lastMonday = new Date(today);
-            lastMonday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-            
-            const lastMondayStr = lastMonday.toISOString().split('T')[0];
-
-            const gameWeekExists = currentSeasonGameWeeks.some(gw => gw.date === lastMondayStr);
-
-            if (!gameWeekExists) {
-                const basePath = `artifacts/${appId}/users/${currentUserId}/seasons/${currentSeasonId}`; 
-                await addDoc(collection(db, `${basePath}/gameWeeks`), {
-                    date: lastMondayStr, totalCost: 39.00, playerIds: [], paidForBy: {}
-                });
-            }
+            // This feature is now disabled as all game weeks are pre-seeded.
+            return;
         }
 
         async function checkAndSeedMissingData(existingSeasonNames = []) {
