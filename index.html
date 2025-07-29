@@ -443,9 +443,12 @@
 
             const seasonsRef = collection(db, `${basePath}/seasons`);
             onSnapshot(seasonsRef, async (snapshot) => {
-                if (snapshot.empty && isAdminLoggedIn) { 
-                    await seedInitialData();
-                } else if (!snapshot.empty) {
+                const existingSeasons = snapshot.docs.map(doc => doc.data().name);
+                if (isAdminLoggedIn) {
+                    await checkAndSeedMissingData(existingSeasons);
+                }
+
+                if (!snapshot.empty) {
                     seasons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.startDate.localeCompare(b.startDate));
                     renderSeasonSelector();
                     if (!currentSeasonId || !seasons.find(s => s.id === currentSeasonId)) {
@@ -454,7 +457,7 @@
                     seasonSelector.value = currentSeasonId;
                     updateCurrentSeasonDisplay(); 
                     await fetchAllSeasonData(); 
-                } else {
+                } else if (!isAdminLoggedIn) {
                     loadingOverlay.style.display = 'none';
                     summaryTableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No data available. Admin must log in to set up.</td></tr>`;
                     gameWeeksContainer.innerHTML = '';
@@ -1037,64 +1040,58 @@
             }
         }
 
-        async function seedInitialData() {
-            const basePath = `artifacts/${appId}/users/${currentUserId}`; 
+        async function checkAndSeedMissingData(existingSeasonNames = []) {
+            const basePath = `artifacts/${appId}/users/${currentUserId}`;
             const batch = writeBatch(db);
+            let dataWasMissing = false;
 
-            const playerNames = [
-                "Keiaan McLean", "Joshua Merry", "Alex Merry", "Corey McLean", "Brandon MacDonald", 
-                "Danush", "Alfie", "Alex Higgins", "Ben Higgins", "James Bannister", 
-                "Keaton McLean", "Charlie", "James Britton", "Jay Jones"
+            const masterSeasons = [
+                {
+                    name: "Winter 2025",
+                    startDate: "2025-01-06",
+                    dates: ["2025-01-06", "2025-01-13", "2025-01-20", "2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-24", "2025-03-31", "2025-04-07"]
+                },
+                {
+                    name: "Spring 2025",
+                    startDate: "2025-04-14",
+                    dates: ["2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14"]
+                },
+                {
+                    name: "Summer 2025",
+                    startDate: "2025-07-21",
+                    dates: ["2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20"]
+                }
             ];
-            playerNames.forEach(name => {
-                const playerRef = doc(collection(db, `${basePath}/players`));
-                batch.set(playerRef, { name });
-            });
-            
-            const winterStartDate = "2025-01-06";
-            const winterDates = [
-                "2025-01-06", "2025-01-13", "2025-01-20", "2025-01-27", 
-                "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", 
-                "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-24", 
-                "2025-03-31", "2025-04-07"  
-            ];
-            const winterSeasonRef = doc(collection(db, `${basePath}/seasons`));
-            batch.set(winterSeasonRef, { name: "Winter 2025", startDate: winterStartDate });
-            winterDates.forEach(date => {
-                const gwRef = doc(collection(db, `${basePath}/seasons/${winterSeasonRef.id}/gameWeeks`));
-                batch.set(gwRef, { date, totalCost: 39.00, playerIds: [], paidForBy: {} });
-            });
 
-            const springStartDate = "2025-04-14"; 
-            const springDates = [
-                "2025-04-14", "2025-04-21", "2025-04-28", 
-                "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26",
-                "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23",
-                "2025-06-30", "2025-07-07", "2025-07-14"
-            ];
-            const springSeasonRef = doc(collection(db, `${basePath}/seasons`));
-            batch.set(springSeasonRef, { name: "Spring 2025", startDate: springStartDate });
-            springDates.forEach(date => {
-                const gwRef = doc(collection(db, `${basePath}/seasons/${springSeasonRef.id}/gameWeeks`));
-                batch.set(gwRef, { date, totalCost: 39.00, playerIds: [], paidForBy: {} });
-            });
+            // Check for missing players (only if players list is empty)
+            const playersSnapshot = await getDocs(collection(db, `${basePath}/players`));
+            if (playersSnapshot.empty) {
+                dataWasMissing = true;
+                const playerNames = ["Keiaan McLean", "Joshua Merry", "Alex Merry", "Corey McLean", "Brandon MacDonald", "Danush", "Alfie", "Alex Higgins", "Ben Higgins", "James Bannister", "Keaton McLean", "Charlie", "James Britton", "Jay Jones"];
+                playerNames.forEach(name => {
+                    const playerRef = doc(collection(db, `${basePath}/players`));
+                    batch.set(playerRef, { name });
+                });
+            }
 
-            const summerStartDate = "2025-07-21";
-            const summerDates = [
-                "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11",
-                "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08",
-                "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06",
-                "2025-10-13", "2025-10-20"
-            ];
-            const summerSeasonRef = doc(collection(db, `${basePath}/seasons`));
-            batch.set(summerSeasonRef, { name: "Summer 2025", startDate: summerStartDate });
-            summerDates.forEach(date => {
-                const gwRef = doc(collection(db, `${basePath}/seasons/${summerSeasonRef.id}/gameWeeks`));
-                batch.set(gwRef, { date, totalCost: 39.00, playerIds: [], paidForBy: {} });
-            });
+            // Check for missing seasons
+            for (const season of masterSeasons) {
+                if (!existingSeasonNames.includes(season.name)) {
+                    dataWasMissing = true;
+                    console.log(`Seeding missing season: ${season.name}`);
+                    const seasonRef = doc(collection(db, `${basePath}/seasons`));
+                    batch.set(seasonRef, { name: season.name, startDate: season.startDate });
+                    season.dates.forEach(date => {
+                        const gwRef = doc(collection(db, `${basePath}/seasons/${seasonRef.id}/gameWeeks`));
+                        batch.set(gwRef, { date, totalCost: 39.00, playerIds: [], paidForBy: {} });
+                    });
+                }
+            }
 
-            await batch.commit();
-            console.log("Initial data seeded!");
+            if (dataWasMissing) {
+                await batch.commit();
+                console.log("Missing data was seeded.");
+            }
         }
 
     </script>
